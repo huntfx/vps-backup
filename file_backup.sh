@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 #Split a file into multiple parts, compress and email
 #Usage: ./file_backup.sh input_file, [--split-size 10m] [--email user@email.com] [--disable-compression]
-#TODO: Time taken (for email body), maximum_file_limit
+#TODO: Time taken (for email body), maximum_file_limit, fallback if no email in config
 
+
+#Read config
 source config.conf
-
 mkdir ${TEMPDIR} -p
+mkdir ${TEMPDIR}/temp -p
 
+#Parse arguments
 file_path=$1
 
 compress_file=true
@@ -52,11 +55,8 @@ fi
 if [ -z ${split_size} ] || [ ${split_size} = false ];
 then
     cp ${file_path} ${TEMPDIR}/${original_file}.0
-    #file_list[0]=${TEMPDIR}/${original_file}.0
 else
     split --bytes ${split_size} --numeric-suffixes --suffix-length 1 ${file_path} ${TEMPDIR}/${original_file}.
-    echo find "${TEMPDIR}" -iname "${original_file}.*"
-    #file_list=${find "${TEMPDIR}" -iname "${original_file}.*"}
 fi
 
 #Clean up
@@ -66,15 +66,19 @@ for file in ${TEMPDIR}/${original_file}.*
 do  
     next_index=${index}+1
     subject="Backup of ${base_file}"
-    if [ ${num_files} -gt 1 ]; then
+    if [ ${num_files} -gt 1 ]; 
+    then
         subject="${subject} (Part ${index})"
+    else
+        mv ${file} ${TEMPDIR}/temp/${original_file}
+        file=${TEMPDIR}/temp/${original_file}
     fi
     message="Test backup"
     
     #Send email
     if [ ! -z ${email_address} ]; then
         echo "Sending ${file} to ${email_address}... ${index}/${num_files}"
-        #echo "${message}" | mutt -a ${file} -s "${subject}" -e "my_hdr From:${EMAIL}" -- ${email_address}
+        echo "${message}" | mutt -a ${file} -s "${subject}" -e "my_hdr From:${EMAIL}" -- ${email_address}
     fi
     
     #Delete
