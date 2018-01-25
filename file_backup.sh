@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #Split a file into multiple parts, compress and email
 #Usage: ./file_backup.sh input_file, [--split-size 10m] [--email user@email.com] [--disable-compression]
+#[--time-start] can be given in microseconds from another script to get a more accuate time.
 #TODO: Time taken (for email body), maximum_file_limit, fallback if no email in config
 
 
@@ -13,7 +14,7 @@ mkdir ${TEMPDIR}/temp -p
 file_path=$1
 
 compress_file=true
-
+time_start=$(($(date +%s%N)/1000000))
 while [ $# -ge 1 ]; do
         case "$1" in
                 -- )
@@ -26,6 +27,10 @@ while [ $# -ge 1 ]; do
                         ;;
                 -s | --split-size )
                         split_size="$2"
+                        shift
+                        ;;
+                -ts | --time-start )
+                        time_start="$2"
                         shift
                         ;;
                 -dc | --disable-compression )
@@ -59,6 +64,9 @@ else
     split --bytes ${split_size} --numeric-suffixes --suffix-length 1 ${file_path} ${TEMPDIR}/${original_file}.
 fi
 
+time_end=$(($(date +%s%N)/1000000))
+let time_elapsed="time_end-time_start"
+
 #Clean up
 index=1
 num_files=$(find ${TEMPDIR} -iname ${original_file}.* -type f -printf '.' | wc -c)
@@ -73,7 +81,7 @@ do
         mv ${file} ${TEMPDIR}/temp/${original_file}
         file=${TEMPDIR}/temp/${original_file}
     fi
-    message="Test backup"
+    message="Preparation of the file took ${time_elapsed}ms."
     
     #Send email
     if [ ! -z ${email_address} ]; then
