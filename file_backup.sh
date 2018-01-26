@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 #Split a file into multiple parts, compress and email
-#Usage: ./file_backup.sh input_file, [--split 10m] [--email user@email.com] [--disable-compression]
-#[--time-start] can be given in microseconds from another script to get a more accuate time.
-#TODO: Time taken (for email body), maximum_file_limit, fallback if no email in config
+#Usage: ./file_backup.sh input_file, [--split 10m] [--email user@email.com] [--uncompressed]
+#[--time-start] can be given as "$(date +%s%N)/1000000" from another script to get a more accuate time.
+#TODO: Time taken (for email body), maximum_file_limit
 
 
-#Read config
 source config.conf
 
 #Create temp folder - https://stackoverflow.com/a/34676160/2403000
@@ -15,7 +14,6 @@ if [[ ! "$work_dir" || ! -d "$work_dir" ]]; then
   echo "Could not create temp dir"
   exit 1
 fi
-
 
 #Parse arguments
 file_path=$1
@@ -50,6 +48,10 @@ while [ $# -ge 1 ]; do
         esac
         shift
 done
+
+if [ ! -z "$email_address" ] && [ -z "$SEND_ADDRESS" ]; then
+    echo "Sending address (SEND_ADDRESS) not specified in config."
+fi
 
 base_file=$(basename "$file_path")
 
@@ -93,7 +95,7 @@ do
     
     #Send email
     if [ ! -z "$email_address" ]; then
-        echo "Sending $file to $email_address... $index/$num_files"
+        echo "Sending $(basename "$file") to $email_address... $index/$num_files"
         
         #Generate email subject and body
         subject="Backup of $base_file"
@@ -102,7 +104,12 @@ do
         fi
         message="Preparation of the file took ${time_elapsed}ms."
         
-        echo "$message" | mutt -a "$file" -s "$subject" -e "my_hdr From:$EMAIL" -- "$email_address"
+        #Get email from config if possible, otherwise fallback to default
+        if [ ! -z "$SEND_ADDRESS" ]; then
+            header="my_hdr From:$SEND_ADDRESS"
+        fi
+        
+        echo "$message" | mutt -a "$file" -s "$subject" -e "$header" -- "$email_address"
     fi
     
     (( index++ ))
