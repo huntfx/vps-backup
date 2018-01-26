@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #Split a file into multiple parts, compress and email
-#Usage: ./file_backup.sh input_file, [--split 10m] [--email user@email.com] [--uncompressed]
+#Usage: ./file_backup.sh input_file, [--split 10m] [--email user@email.com] [--uncompressed] [--msx-files 16]
 #[--time-start] can be given as "$(date +%s%N)/1000000" from another script to get a more accuate time.
 #TODO: Time taken (for email body), maximum_file_limit
 
@@ -11,7 +11,7 @@ source config.conf
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 work_dir=$(mktemp -d -p "$script_dir")
 if [[ ! "$work_dir" || ! -d "$work_dir" ]]; then
-  echo "Could not create temp dir"
+  echo "Error: Failed to create temp dir."
   exit 1
 fi
 
@@ -19,6 +19,7 @@ fi
 file_path=$1
 
 compress_file=true
+max_files=8
 (( time_start=$(date +%s%N)/1000000 ))
 while [ $# -ge 1 ]; do
         case "$1" in
@@ -32,6 +33,10 @@ while [ $# -ge 1 ]; do
                         ;;
                 -s | --split | --split-size | --split-file )
                         split_size="$2"
+                        shift
+                        ;;
+                -fl | --file-limit | -mf | --max-files )
+                        max_files = "$2"
                         shift
                         ;;
                 -ts | --time-start )
@@ -50,7 +55,7 @@ while [ $# -ge 1 ]; do
 done
 
 if [ ! -z "$email_address" ] && [ -z "$SEND_ADDRESS" ]; then
-    echo "Sending address (SEND_ADDRESS) not specified in config."
+    echo "Warning: SEND_ADDRESS not defined in config. Using default."
 fi
 
 base_file=$(basename "$file_path")
@@ -69,7 +74,7 @@ if [ "$compress_file" = true ]; then
 fi
 
 #Split the file
-if [ -z "$split_size" ] || [ "$split_size" = false ];
+if [ -z "$split_size" ] || [ "$split_size" -eq 0 ];
 then
     cp "$file_path" "$new_location.0"
 else
@@ -80,40 +85,46 @@ fi
 (( time_end=$(date +%s%N)/1000000 ))
 (( time_elapsed=time_end-time_start ))
 
-#Clean up
+#Process each file
 index=1
 num_files=$(find "$work_dir" -iname "$original_file.*" -type f -printf '.' | wc -c)
-for file in $new_location.*
-do  
-    echo "Processing: $file"
-
-    #Remove .0 if there is only 1 part
-    if [ "$num_files" -le 1 ]; then
-        mv "$file" "$new_location"
-        file="$new_location"
-    fi
+if [ "$num_files" -eq 0 ] || [ "$num_files" -gt "$max_files" ];
+then
+    echo "Error: Too many split files ($num_files). Use --max-files to override this limit."
     
-    #Send email
-    if [ ! -z "$email_address" ]; then
-        echo "Sending $(basename "$file") to $email_address... $index/$num_files"
-        
-        #Generate email subject and body
-        subject="Backup of $base_file"
-        if [ "$num_files" -gt 1 ]; then
-            subject="$subject (Part $index)"
-        fi
-        message="Preparation of the file took ${time_elapsed}ms."
-        
-        #Get email from config if possible, otherwise fallback to default
-        if [ ! -z "$SEND_ADDRESS" ]; then
-            header="my_hdr From:$SEND_ADDRESS"
+else
+    for file in $new_location.*
+    do  
+        echo "Processing: $file"
+
+        #Remove .0 if there is only 1 part
+        if [ "$num_files" -le 1 ]; then
+            mv "$file" "$new_location"
+            file="$new_location"
         fi
         
-        echo "$message" | mutt -a "$file" -s "$subject" -e "$header" -- "$email_address"
-    fi
+        #Send email
+        if [ ! -z "$email_address" ]; then
+            echo "Sending $(basename "$file") to $email_address... $index/$num_files"
+            
+            #Generate email subject and body
+            subject="Backup of $base_file"
+            if [ "$num_files" -gt 1 ]; then
+                subject="$subject (Part $index)"
+            fi
+            message="Preparation of the file took ${time_elapsed}ms."
+            
+            #Get email from config if possible, otherwise fallback to default
+            if [ ! -z "$SEND_ADDRESS" ]; then
+                header="my_hdr From:$SEND_ADDRESS"
+            fi
+            
+            echo "$message" | mutt -a "$file" -s "$subject" -e "$header" -- "$email_address"
+        fi
+        
+        (( index++ ))
+    done
+fi
     
-    (( index++ ))
-done
-
 #Delete temp directory
 rm -rf "$work_dir"
