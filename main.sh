@@ -5,7 +5,7 @@
 #TODO: Time taken (for email body), maximum_file_limit
 
 
-source config.conf
+(( time_start=$(date +%s%N)/1000000 ))
 
 #Create temp folder - https://stackoverflow.com/a/34676160/2403000
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -14,13 +14,18 @@ if [[ ! "$work_dir" || ! -d "$work_dir" ]]; then
   echo "Error: Failed to create temp dir."
   exit 1
 fi
+function cleanup {
+  rm -rf "$work_dir"
+}
+trap cleanup EXIT
+
+source config.conf
 
 #Parse arguments
 file_path=$1
 
 compress_file=true
 max_files=8
-(( time_start=$(date +%s%N)/1000000 ))
 while [ $# -ge 1 ]; do
         case "$1" in
                 -- )
@@ -36,7 +41,7 @@ while [ $# -ge 1 ]; do
                         shift
                         ;;
                 -fl | --file-limit | -mf | --max-files )
-                        max_files = "$2"
+                        max_files="$2"
                         shift
                         ;;
                 -ts | --time-start )
@@ -45,6 +50,13 @@ while [ $# -ge 1 ]; do
                         ;;
                 -dc | --disable-compression | -uc | --uncompressed )
                         compress_file=false
+                        ;;
+                -m | --message )
+                        custom_message="$2"
+                        ;;
+                --name-override )
+                        name_override="$2"
+                        shift
                         ;;
                 -h | --help )
                         echo "Display some help"
@@ -105,26 +117,33 @@ else
         
         #Send email
         if [ ! -z "$email_address" ]; then
+            
             echo "Sending $(basename "$file") to $email_address... $index/$num_files"
             
+            #Override name
+            file_text="$base_file"
+            if [ ! -z "$name_override" ]; then
+                file_text="$name_override"
+            fi
+            
             #Generate email subject and body
-            subject="Backup of $base_file"
+            subject="Backup of $file_text"
             if [ "$num_files" -gt 1 ]; then
                 subject="$subject (Part $index)"
             fi
             message="Preparation of the file took ${time_elapsed}ms."
+            if [ ! -z "$custom_message" ]; then
+                message="$custom_message\n\n$message"
+            fi
             
             #Get email from config if possible, otherwise fallback to default
             if [ ! -z "$SEND_ADDRESS" ]; then
                 header="my_hdr From:$SEND_ADDRESS"
             fi
             
-            echo "$message" | mutt -a "$file" -s "$subject" -e "$header" -- "$email_address"
+            echo -e "$message" | mutt -a "$file" -s "$subject" -e "$header" -- "$email_address"
         fi
         
         (( index++ ))
     done
 fi
-    
-#Delete temp directory
-rm -rf "$work_dir"
