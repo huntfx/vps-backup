@@ -7,8 +7,9 @@ Backup the database and logs on Linux. Only tested on a VPS running Ubuntu
 
 - `./file_backup.sh /var/log/error.log --disable-compression --email=me@email.com` (email log as text file)
 
+- `./log-rot -dir "/var/log" -ex ".log" --delete --email=me@email.com` (email and delete rotated logs like `error.log.1`)
+
 - `./database_backup.sh /credentials.conf --email=me@email.com` (generate sql dump - planned)
-- `./log_backup.sh /var/log --rotation-only --delete --email=me@email.com` (only email rotated logs like `error.log.1` - planned)
 
 <b>How it works:</b>
 
