@@ -100,10 +100,10 @@ fi
 #Process each file
 index=1
 num_files=$(find "$work_dir" -iname "$original_file.*" -type f -printf '.' | wc -c)
-if [ "$num_files" -eq 0 ] || [ "$num_files" -gt "$max_files" ];
-then
+if  [ "$num_files" -gt "$max_files" ]; then
     echo "Error: Too many split files ($num_files). Use --max-files to override this limit."
-    
+elif [ "$num_files" -eq 0 ]; then
+    echo "Error: File doesn't exist."
 else
     for file in $new_location.*
     do  
