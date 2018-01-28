@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #Email all the rotated logs and optionally delete them
-#Will only process logs with a naming matching *.log.* (eg. error.log.1)
+#Requires logs to be rotated as file.log.*, or file.log.*.gz
 
 #Create temp folder - https://stackoverflow.com/a/34676160/2403000
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -68,36 +68,46 @@ done < <(find "$log_dir" -name "*.$extension.*" -print0)
 
 for file in "${rotated_logs[@]}"
 do
-    #Set compression (could probably be shortened with something like uncompressed=!compress_file)
-    if [ "$compress_file" = true ];
-    then
-        uncompressed=false
-    else
-        uncompressed=true
-    fi
-    
     #Get extension and base name from path
     file_name=$(basename "$file")
     file_ext="${file_name##*.}"
     
     #Generate a new path
-    new_file="${file_name%%.${extension}*}.log"
+    last_modified_raw=$(stat -c %y "$file")
+    last_modified=$(date --date "$last_modified_raw" +'%Y-%m-%d')
+    new_zip="${file_name%%.${extension}*}.log"
+    new_file="${file_name%%.${extension}*}.$last_modified.log"
+    final_file="$new_file"
+    
+    #Amend file name if new file is already zipped
     if [ "$file_ext" == "gz" ]; then
-        uncompressed=true
-        new_file="$new_file.gz"
+        final_file="$new_zip.gz"
     fi
-    new_path="$work_dir/$new_file"
+    
+    #Copy log file to new location
+    new_path="$work_dir/$final_file"
     cp "$file" "$new_path"
     
-    custom_name="$(expr "$file" : "$log_dir/\(.*\)$file_name")$new_file"
-    
-    #Run main.sh
-    if [ "$uncompressed" = true ];
-    then
-        ./main.sh "$new_path" --email "$email_address" --split "$split_size" --name-override "$custom_name" --message "$email_body" --uncompressed
-    else
-        ./main.sh "$new_path" --email "$email_address" --split "$split_size" --name-override "$custom_name" --message "$email_body"
+    #Unzip file and rebuild path if required
+    if [ "$file_ext" == "gz" ]; then
+        gzip -d "$new_path"
+        mv "$work_dir/$new_zip" "$work_dir/$new_file"
+        final_file="$new_file"
+        new_path="$work_dir/$final_file"
     fi
+    
+    #Compress file and remove timestamp
+    if [ "$compress_file" = true ]; then
+        gzip "$new_path"
+        mv "$new_path.gz" "$work_dir/$new_zip.gz"
+        new_path="$work_dir/$new_zip.gz"
+    fi
+    
+    #Send to backup script
+    custom_name="$(expr "$file" : "$log_dir/\(.*\)$file_name")$new_zip"
+    echo "Sending $custom_name to backup function..."
+    custom_body="$email_body\nFile was saved at $(date --date "$last_modified_raw" +'%Y-%m-%d %H:%M:%S')."
+    ./main.sh "$new_path" --email "$email_address" --split "$split_size" --name-override "$custom_name" --message "$custom_body" --uncompressed
     
     #Delete original log file
     if [ "$delete" = true ]; then
